@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.14.36623.8 d17.14
+VisualStudioVersion = 17.14.36623.8
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "dx11-sendbox", "dx11-sendbox\dx11-sendbox.vcxproj", "{CB24A693-E44E-4E9B-919F-0EC4016904FD}"
 EndProject
@@ -15,12 +15,12 @@ Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Debug|x64.ActiveCfg = Debug|x64
 		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Debug|x64.Build.0 = Debug|x64
-		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Debug|x86.ActiveCfg = Debug|Win32
-		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Debug|x86.Build.0 = Debug|Win32
+		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Debug|x86.ActiveCfg = Debug|x64
+		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Debug|x86.Build.0 = Debug|x64
 		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Release|x64.ActiveCfg = Release|x64
 		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Release|x64.Build.0 = Release|x64
-		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Release|x86.ActiveCfg = Release|Win32
-		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Release|x86.Build.0 = Release|Win32
+		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Release|x86.ActiveCfg = Release|x64
+		{CB24A693-E44E-4E9B-919F-0EC4016904FD}.Release|x86.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
