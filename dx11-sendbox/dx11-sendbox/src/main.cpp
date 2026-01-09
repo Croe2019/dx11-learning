@@ -12,6 +12,10 @@ using Microsoft::WRL::ComPtr;
 
 static const wchar_t* kWndClassName = L"DX11SandboxWindowClass";
 
+/*
+* x軸、y軸、z軸の値
+* 三色＋アルファ値をもたせる構造体
+*/ 
 struct Vertex
 {
     float x, y, z;
@@ -20,17 +24,70 @@ struct Vertex
 
 struct D3D11Context
 {
+    // GPUリソースを作る工場(factory) 例：頂点バッファ、テクスチャ、シェーダなどGPU側に置くものは基本device->Createxxx()で作る
     ComPtr<ID3D11Device> device;
+    // contextは描画コマンドを発行する司令塔
+    /*
+    * 例：ClearRenderTargetView、IASetVertexBuffer、Draw、VSSetShaderなどすべてcontext経由で行う
+    * deviceが「作る」
+    * contextが「使う(コマンドを流す)」
+    * という役割分担
+    */
     ComPtr<ID3D11DeviceContext> context;
+    /*
+    * 表示用バッファ列（フロント／バックバッファ）を管理する
+    * swapChain->Present(1, 0)：VSyncありで表示更新
+    */ 
     ComPtr<IDXGISwapChain> swapChain;
+    /*
+    * 「今描画する先（カラーバッファ）」へのビュー
+    * バックバッファ（Texture2D)そのものを直接描画ターゲットにできないため、RTVを作って
+    * OMSetRenderTargetsで設定する
+    * context->ClearRenderTargetView(rtv, color)はこのrtvをクリアしている
+    */
     ComPtr<ID3D11RenderTargetView> rtv;
 
     // Milestone 1
+
+    /*
+        頂点シェーダ（HLSLのVSMainをコンパイルして作ったもの)
+        頂点をどこに置くか（座標変換など）を決める
+    */
     ComPtr<ID3D11VertexShader> vs;
+    /*
+        ピクセルシェーダ（HLSLのPSMain)
+        各ピクセルの色を決める
+    */
     ComPtr<ID3D11PixelShader> ps;
+
+    /*
+        頂点バッファのメモリ配置と、シェーダ入力の対応表
+        今回の頂点は
+        ・POSITION:float3 (12bytes)
+        ・COLOR:float4 (16bytes)
+        とうい並びだが、それを
+        ・シェーダのPOSITIONセマンティクスへ
+        ・シェーダのCOLORセマンティクスへ
+        どう結びつけるかを定義する
+        これがずれると、三角形が出ない／色が変・クラッシュ等が起きる
+    */
     ComPtr<ID3D11InputLayout> inputLayout;
+    /*
+        頂点バッファ(Vertex Buffer)です
+        三角形を構成する3頂点データ(座標・色)をGPUにおいたもの
+        描画時に
+        ・IASetVertexBuffers(...)
+        で入力アセンブラ(IA)に渡され、Draw(3,0)で参照される
+    */
     ComPtr<ID3D11Buffer> vb;
 
+    /*
+        画面サイズ
+        ・ウィンドウ作成時のクライアントサイズ
+        ・SwapChain作成時のバッファサイズ
+        ・Viewport設定
+        など複数箇所で同じ値を使うため、Contextにまとめている
+    */
     UINT width = 1280;
     UINT height = 720;
 };
@@ -91,6 +148,11 @@ bool CreateMainWindow(HINSTANCE hInst, int nCmdShow, UINT width, UINT height, HW
 
 bool InitD3D11(HWND hWnd, D3D11Context& dx)
 {
+    // SwapChainDescを作る
+    /*
+        dx.width/dx.heightを使ってDXGI_SWAPCHAIN_DESC_scdを構築
+        (ここでのwidth/heghtは「バックバッファのサイズ」
+    */
     DXGI_SWAP_CHAIN_DESC scd{};
     scd.BufferDesc.Width = dx.width;
     scd.BufferDesc.Height = dx.height;
@@ -111,7 +173,14 @@ bool InitD3D11(HWND hWnd, D3D11Context& dx)
 
     D3D_FEATURE_LEVEL fls[] = { D3D_FEATURE_LEVEL_11_0 };
     D3D_FEATURE_LEVEL outFL{};
-
+    /*
+        ここで一気に3つ生成される
+        dx.device(工場)
+        dx.context(司令塔)
+        dx.swapChain(画面に出すバッファ列)
+        この1行で「GPUに命令できる状態になる」
+    
+    */
     HRESULT hr = D3D11CreateDeviceAndSwapChain(
         nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
         createFlags,
@@ -141,6 +210,11 @@ bool InitD3D11(HWND hWnd, D3D11Context& dx)
 
     if (FAILED(hr)) return false;
 
+    /*
+        BackBufferを取得し、RTVを作成
+        ・dx.swapChain->GetBuffer(...)でバックバッファ(Texture2D)を取る
+        ・dx.device->CreateRenderTargetView(...)でdx.rtvを作る
+    */
     ComPtr<ID3D11Texture2D> backBuffer;
     hr = dx.swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)backBuffer.GetAddressOf());
     if (FAILED(hr)) return false;
@@ -148,6 +222,12 @@ bool InitD3D11(HWND hWnd, D3D11Context& dx)
     hr = dx.device->CreateRenderTargetView(backBuffer.Get(), nullptr, dx.rtv.GetAddressOf());
     if (FAILED(hr)) return false;
 
+    /*
+    * 出力先を設定(OM)
+    * dx.context->OMSetRenderTargets(1, dx.rtv.GetAddressOf(), nullptr);
+    * ここで「以降の描画はrtvに向かう」状態になる
+    * 
+    */
     dx.context->OMSetRenderTargets(1, dx.rtv.GetAddressOf(), nullptr);
 
     D3D11_VIEWPORT vp{};
@@ -155,11 +235,18 @@ bool InitD3D11(HWND hWnd, D3D11Context& dx)
     vp.Height = (FLOAT)dx.height;
     vp.MinDepth = 0.0f;
     vp.MaxDepth = 1.0f;
+    /*
+        ViewPortの設定(RS)
+        dx.context->RSSetViewports(...)
+        ここで「画面のどこに描くか(0,0～width,height)」が確定する
+        この時点でClear →　Presentまで可能になる
+    */
     dx.context->RSSetViewports(1, &vp);
 
     return true;
 }
 
+ // InitTrianglePipeline(D3D11Context& dx)　←はdeviceで作って、contextで使えるようにするための準備
 bool InitTrianglePipeline(D3D11Context& dx)
 {
     UINT flags = 0;
@@ -171,6 +258,10 @@ bool InitTrianglePipeline(D3D11Context& dx)
     ComPtr<ID3DBlob> psBlob;
     ComPtr<ID3DBlob> err;
 
+    /*
+        HLSLをコンパイル(実行時に読む)
+        ここでよくある失敗が、「作業ディレクトリ不一致（パスが見つからない）
+    */
     HRESULT hr = D3DCompileFromFile(
         L"shaders/basic.hlsl",
         nullptr, D3D_COMPILE_STANDARD_FILE_INCLUDE,
@@ -192,6 +283,9 @@ bool InitTrianglePipeline(D3D11Context& dx)
     );
     if (FAILED(hr)) { ShowHResult(L"D3DCompileFromFile(PS) failed.", hr, err.Get()); return false; }
 
+    /*
+        Shaderを生成(device)
+    */
     hr = dx.device->CreateVertexShader(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), nullptr, dx.vs.GetAddressOf());
     if (FAILED(hr)) { ShowHResult(L"CreateVertexShader failed.", hr); return false; }
 
