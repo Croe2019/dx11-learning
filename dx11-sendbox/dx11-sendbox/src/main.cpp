@@ -297,6 +297,13 @@ bool InitTrianglePipeline(D3D11Context& dx)
         { "COLOR",    0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D11_INPUT_PER_VERTEX_DATA, 0 },
     };
 
+    /*
+        InputLayoutを生成(device)
+        ・dx.device->CreateInputLayout(layout, ..., vsBlob, ...) -> dx.inputLayout
+        InputLayoutはvsBlob（頂点シェーダの入力定義）とセットで作るのがポイント
+        ここがずれると描画が崩れる
+    
+    */
     hr = dx.device->CreateInputLayout(
         layout, (UINT)_countof(layout),
         vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(),
@@ -318,24 +325,39 @@ bool InitTrianglePipeline(D3D11Context& dx)
     D3D11_SUBRESOURCE_DATA init{};
     init.pSysMem = verts;
 
+    /*
+        VertexBufferを生成（device)
+        ・頂点配列Vertex verts[3]を用意
+        ・dx.device->CreateBuffer(...)dx.vb
+        ここまでで、三角形描画に必要な資材が揃う状態
+    */
     hr = dx.device->CreateBuffer(&bd, &init, dx.vb.GetAddressOf());
     if (FAILED(hr)) { ShowHResult(L"CreateBuffer(VB) failed.", hr); return false; }
 
     return true;
 }
 
+// 描画パイプラインに材料をセットする Draw
 void DrawTriangle(D3D11Context& dx)
 {
     UINT stride = sizeof(Vertex);
     UINT offset = 0;
-
+    /*
+        IA（入力アセンブラ）に入力を渡す
+        ・IASetInputLayout(dx.inputLayout)
+        ・IASetVertexBuffers(dx.vb)
+        ・IASetPrimitiveTopology(TRIANGLELIST)
+    
+    */
     dx.context->IASetInputLayout(dx.inputLayout.Get());
     dx.context->IASetVertexBuffers(0, 1, dx.vb.GetAddressOf(), &stride, &offset);
     dx.context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
+    // VS/VPをセットする
     dx.context->VSSetShader(dx.vs.Get(), nullptr, 0);
     dx.context->PSSetShader(dx.ps.Get(), nullptr, 0);
 
+    // Draw呼び出し
     dx.context->Draw(3, 0);
 }
 
@@ -365,10 +387,17 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow)
         }
 
         const float clearColor[4] = { 0.10f, 0.15f, 0.30f, 1.0f };
+        /*
+            背景塗りつぶし
+            rtvが「描画先」である前提
+            背景が青いのはこれ
+        
+        */
         dx.context->ClearRenderTargetView(dx.rtv.Get(), clearColor);
 
         DrawTriangle(dx);
 
+        // Present画面に出す
         dx.swapChain->Present(1, 0);
     }
 }
