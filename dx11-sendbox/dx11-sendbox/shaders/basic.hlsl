@@ -1,3 +1,8 @@
+cbuffer CBPerFrame : register(b0)
+{
+    float4x4 gWorldViewProj;
+};
+
 struct VSInput
 {
     float3 pos : POSITION;
@@ -13,7 +18,7 @@ struct PSInput
 PSInput VSMain(VSInput input)
 {
     PSInput o;
-    o.pos = float4(input.pos, 1.0f);
+    o.pos = mul(float4(input.pos, 1.0f), gWorldViewProj);
     o.col = input.col;
     return o;
 }
