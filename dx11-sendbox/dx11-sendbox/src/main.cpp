@@ -3,12 +3,16 @@
 #include <dxgi.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
+#include <DirectXMath.h>
+#include <chrono>
+
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 
 using Microsoft::WRL::ComPtr;
+using namespace DirectX;
 
 static const wchar_t* kWndClassName = L"DX11SandboxWindowClass";
 
@@ -21,6 +25,16 @@ struct Vertex
     float x, y, z;
     float r, g, b, a;
 };
+
+/*
+    定数用のバッファ用の構造体を定義(16バイト境界)
+
+*/
+struct CBPerFrame
+{
+    XMFLOAT4X4 worldViewProj; // 64 bytes (16byte aligned)
+};
+
 
 struct D3D11Context
 {
@@ -88,6 +102,8 @@ struct D3D11Context
         ・Viewport設定
         など複数箇所で同じ値を使うため、Contextにまとめている
     */
+
+    ComPtr<ID3D11Buffer> cbPerFrame;
     UINT width = 1280;
     UINT height = 720;
 };
@@ -334,6 +350,17 @@ bool InitTrianglePipeline(D3D11Context& dx)
     hr = dx.device->CreateBuffer(&bd, &init, dx.vb.GetAddressOf());
     if (FAILED(hr)) { ShowHResult(L"CreateBuffer(VB) failed.", hr); return false; }
 
+    // Constant Buffer (b0)
+    D3D11_BUFFER_DESC cbd{};
+    cbd.Usage = D3D11_USAGE_DYNAMIC;
+    cbd.ByteWidth = sizeof(CBPerFrame);
+    cbd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    cbd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    hr = dx.device->CreateBuffer(&cbd, nullptr, dx.cbPerFrame.GetAddressOf());
+    if (FAILED(hr)) { ShowHResult(L"CreateBuffer(CB) failed.", hr); return false; }
+
+
     return true;
 }
 
@@ -365,6 +392,8 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow)
 {
     D3D11Context dx;
     HWND hWnd = nullptr;
+    auto t0 = std::chrono::steady_clock::now();
+
 
     if (!CreateMainWindow(hInst, nCmdShow, dx.width, dx.height, hWnd)) {
         MessageBoxW(nullptr, L"CreateMainWindow failed.", L"Error", MB_OK);
@@ -394,6 +423,31 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow)
         
         */
         dx.context->ClearRenderTargetView(dx.rtv.Get(), clearColor);
+        // time (seconds)
+        auto t1 = std::chrono::steady_clock::now();
+        float sec = std::chrono::duration<float>(t1 - t0).count();
+
+        // Matrices
+        XMMATRIX world = XMMatrixRotationZ(sec);
+        XMMATRIX view = XMMatrixIdentity();
+        XMMATRIX proj = XMMatrixIdentity();
+        XMMATRIX wvp = world * view * proj;
+
+        // HLSL mul(float4, matrix) で安全にするため転置して渡す
+        CBPerFrame cb{};
+        XMStoreFloat4x4(&cb.worldViewProj, XMMatrixTranspose(wvp));
+
+        // Update constant buffer
+        D3D11_MAPPED_SUBRESOURCE ms{};
+        HRESULT hr = dx.context->Map(dx.cbPerFrame.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &ms);
+        if (SUCCEEDED(hr)) {
+            memcpy(ms.pData, &cb, sizeof(cb));
+            dx.context->Unmap(dx.cbPerFrame.Get(), 0);
+        }
+
+        // Bind to VS b0
+        dx.context->VSSetConstantBuffers(0, 1, dx.cbPerFrame.GetAddressOf());
+
 
         DrawTriangle(dx);
 
