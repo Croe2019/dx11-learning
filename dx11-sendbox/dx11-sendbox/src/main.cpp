@@ -489,18 +489,23 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow)
         auto t1 = std::chrono::steady_clock::now();
         float sec = std::chrono::duration<float>(t1 - t0).count();
 
-        // Matrices
-        XMMATRIX world = XMMatrixRotationZ(sec);
-        XMMATRIX view = XMMatrixIdentity();
-        /*XMMATRIX proj = XMMatrixIdentity();
-        XMMATRIX wvp = world * view * proj;*/
-
         // HLSL mul(float4, matrix) で安全にするため転置して渡す
         CBPerFrame cb{};
         float aspect = (dx.height != 0) ? (float)dx.width / (float)dx.height : 1.0f;
 
-        // 2Dのままでも良いが、後で3D化しやすい形に
-        XMMATRIX proj = XMMatrixOrthographicOffCenterLH(-aspect, aspect, -1.0f, 1.0f, 0.0f, 1.0f);
+        // 回転（現状のまま）
+        XMMATRIX world = XMMatrixRotationZ(sec);
+
+        // 2Dなので view は単位行列でOK
+        XMMATRIX view = XMMatrixIdentity();
+
+        // オルソ投影：縦を [-1, 1] に固定し、横を aspect に合わせて広げる
+        // これで縦横比が変わっても形が潰れない
+        XMMATRIX proj = XMMatrixOrthographicOffCenterLH(
+            -aspect, aspect,   // left, right
+            -1.0f, 1.0f,      // bottom, top
+            0.0f, 1.0f       // near, far（2Dなので薄くてOK）
+        );
 
         XMMATRIX wvp = world * view * proj;
         XMStoreFloat4x4(&cb.worldViewProj, XMMatrixTranspose(wvp));
