@@ -120,18 +120,79 @@ static void ShowHResult(const wchar_t* title, HRESULT hr, ID3DBlob* err = nullpt
     }
 }
 
+bool ResizeD3D11(D3D11Context& dx, UINT newW, UINT newH)
+{
+    if (!dx.swapChain || !dx.context) return false;
+    if (newW == 0 || newH == 0) return true; // 最小化中
+
+    dx.width = newW;
+    dx.height = newH;
+
+    // バインド解除（重要：RTVを持ったままResizeBuffersすると失敗しやすい）
+    dx.context->OMSetRenderTargets(0, nullptr, nullptr);
+    dx.rtv.Reset();
+
+    HRESULT hr = dx.swapChain->ResizeBuffers(
+        0, // 0=既存のバッファ数維持
+        dx.width, dx.height,
+        DXGI_FORMAT_UNKNOWN, // 既存を維持
+        0
+    );
+    if (FAILED(hr)) {
+        ShowHResult(L"ResizeBuffers failed.", hr);
+        return false;
+    }
+
+    // 新しいBackBufferからRTV作成
+    ComPtr<ID3D11Texture2D> backBuffer;
+    hr = dx.swapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)backBuffer.GetAddressOf());
+    if (FAILED(hr)) {
+        ShowHResult(L"GetBuffer after ResizeBuffers failed.", hr);
+        return false;
+    }
+
+    hr = dx.device->CreateRenderTargetView(backBuffer.Get(), nullptr, dx.rtv.GetAddressOf());
+    if (FAILED(hr)) {
+        ShowHResult(L"CreateRenderTargetView after ResizeBuffers failed.", hr);
+        return false;
+    }
+
+    dx.context->OMSetRenderTargets(1, dx.rtv.GetAddressOf(), nullptr);
+
+    // Viewport更新
+    D3D11_VIEWPORT vp{};
+    vp.TopLeftX = 0;
+    vp.TopLeftY = 0;
+    vp.Width = (FLOAT)dx.width;
+    vp.Height = (FLOAT)dx.height;
+    vp.MinDepth = 0.0f;
+    vp.MaxDepth = 1.0f;
+    dx.context->RSSetViewports(1, &vp);
+
+    return true;
+}
+
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
-    case WM_DESTROY:
-        PostQuitMessage(0);
+    case WM_SIZE:
+    {
+        auto* dx = (D3D11Context*)GetWindowLongPtrW(hWnd, GWLP_USERDATA);
+        if (dx && dx->swapChain) {
+            UINT w = LOWORD(lParam);
+            UINT h = HIWORD(lParam);
+            ResizeD3D11(*dx, w, h);
+        }
         return 0;
+    }
+
     default:
         return DefWindowProcW(hWnd, msg, wParam, lParam);
     }
 }
 
-bool CreateMainWindow(HINSTANCE hInst, int nCmdShow, UINT width, UINT height, HWND& outHwnd)
+
+bool CreateMainWindow(HINSTANCE hInst, int nCmdShow, D3D11Context* dx, HWND& outHwnd)
 {
     WNDCLASSEXW wc{};
     wc.cbSize = sizeof(wc);
@@ -143,7 +204,7 @@ bool CreateMainWindow(HINSTANCE hInst, int nCmdShow, UINT width, UINT height, HW
 
     if (!RegisterClassExW(&wc)) return false;
 
-    RECT rc{ 0,0,(LONG)width,(LONG)height };
+    RECT rc{ 0,0,(LONG)dx->width,(LONG)dx->height };
     AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
 
     HWND hWnd = CreateWindowExW(
@@ -155,6 +216,7 @@ bool CreateMainWindow(HINSTANCE hInst, int nCmdShow, UINT width, UINT height, HW
         rc.bottom - rc.top,
         nullptr, nullptr, hInst, nullptr
     );
+    SetWindowLongPtrW(hWnd, GWLP_USERDATA, (LONG_PTR)dx);
     if (!hWnd) return false;
 
     ShowWindow(hWnd, nCmdShow);
@@ -395,7 +457,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow)
     auto t0 = std::chrono::steady_clock::now();
 
 
-    if (!CreateMainWindow(hInst, nCmdShow, dx.width, dx.height, hWnd)) {
+    if (!CreateMainWindow(hInst, nCmdShow, &dx, hWnd)) {
         MessageBoxW(nullptr, L"CreateMainWindow failed.", L"Error", MB_OK);
         return 1;
     }
@@ -430,12 +492,19 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int nCmdShow)
         // Matrices
         XMMATRIX world = XMMatrixRotationZ(sec);
         XMMATRIX view = XMMatrixIdentity();
-        XMMATRIX proj = XMMatrixIdentity();
-        XMMATRIX wvp = world * view * proj;
+        /*XMMATRIX proj = XMMatrixIdentity();
+        XMMATRIX wvp = world * view * proj;*/
 
         // HLSL mul(float4, matrix) で安全にするため転置して渡す
         CBPerFrame cb{};
+        float aspect = (dx.height != 0) ? (float)dx.width / (float)dx.height : 1.0f;
+
+        // 2Dのままでも良いが、後で3D化しやすい形に
+        XMMATRIX proj = XMMatrixOrthographicOffCenterLH(-aspect, aspect, -1.0f, 1.0f, 0.0f, 1.0f);
+
+        XMMATRIX wvp = world * view * proj;
         XMStoreFloat4x4(&cb.worldViewProj, XMMatrixTranspose(wvp));
+
 
         // Update constant buffer
         D3D11_MAPPED_SUBRESOURCE ms{};
