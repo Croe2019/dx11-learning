@@ -15,7 +15,6 @@ void Timer::Reset()
     mBaseTime = t.QuadPart;
     mPrevTime = t.QuadPart;
     mCurrTime = t.QuadPart;
-    mDeltaTime = 0.0f;
 }
 
 float Timer::Tick()
@@ -27,15 +26,8 @@ float Timer::Tick()
     double dt = (mCurrTime - mPrevTime) * mSecondsPerCount;
     mPrevTime = mCurrTime;
 
-    // 異常値ガード（デバッガ停止後など）
     if (dt < 0.0) dt = 0.0;
-    if (dt > 0.1) dt = 0.1; // 任意：極端なジャンプを抑える
+    if (dt > 0.1) dt = 0.1; // 任意：デバッガ停止後などの急増抑制
 
-    mDeltaTime = static_cast<float>(dt);
-    return mDeltaTime;
-}
-
-float Timer::TotalTime() const
-{
-    return static_cast<float>((mCurrTime - mBaseTime) * mSecondsPerCount);
+    return static_cast<float>(dt);
 }
